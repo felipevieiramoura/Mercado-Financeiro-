@@ -7,13 +7,14 @@ import re
 import glob 
 import datetime
 import seaborn as sns
+import pdb
 
 #Diretório
 os.chdir('C:/Users/Registros')
 
 
 #1) Importação e ajustes da DataFrame:
-swa = pd.read_csv('Operacoes.txt',
+swa = pd.read_csv('Operacoes.csv',
 	sep = ';',
 	decimal = '.',
 	parse_dates = ['Data'],
@@ -38,11 +39,12 @@ for index, row in swa.iterrows():
 swa['Qtd_Negociada'] = negocios
 
 
+
 #Algumas colunas complementares:
 #Valor total por ação. Esse valor será utilizado ao calcular a taxa por ação: valor total das taxas ponderado pelo valor da operação. Por isso, mesmo nas vendas é preciso que o valor da operação seja positivo:
 swa['Valor Operação'] = abs(swa['Qtd_Negociada']) * swa['Preço']
-#Valor total das taxas por nota:
-swa['Taxas p/Nota'] = swa['Liquidação'] + swa['Emolumentos'] + swa['Operacional'] + swa['Impostos']
+
+
 #Quando se compra mais de um título na mesma nota, as taxas devem ser divididas proporcionalmente ao valor de compra/venda de cada título. Abaixo, obteremos as proporções do valor de compra/venda de cada título no total da nota. Isso será feito criando uma outra df, que depois será unida com a swa: 
 valor_bruto_nota = swa.groupby(['Título', 'Data', 'Nota'])['Valor Operação'].sum()
 valor_proporcional_acao = valor_bruto_nota.groupby('Nota').apply(lambda x: x/ x.sum())
@@ -50,7 +52,8 @@ valor_proporcional_acao.name = 'Proporção'
 
 #Juntando na base swa:
 swt_acoes = pd.merge(left = swa, right = valor_proporcional_acao, how = 'left', on = ['Título', 'Data'])
-swt_acoes['Taxa p/Ação'] = swt_acoes['Taxas p/Nota'] * swt_acoes['Proporção'] 
+swt_acoes['Taxa p/Ação'] = swt_acoes['Taxas por Nota'] * swt_acoes['Proporção'] 
+
 
 #Para fins de IR: se estamos comprando, o valor líquido da operação é o Valor Bruto MAIS (e não menos) o Valor da Taxa por Ação! Porque esse valor será deduzido do IR! Se estamos vendendo o valor líquido da operação é o Valor Bruto MENOS o Valor da Taxa por Ação (isso é o mesmo que somar a taxa ao valor bruto se esse estiver negativo):
 #Valor Líquido das Operações
@@ -59,27 +62,30 @@ swt_acoes['VLO'] = swt_acoes['Qtd_Negociada'] * swt_acoes['Preço'] + swt_acoes[
 swt_acoes['Quantidade'] = swt_acoes.groupby('Título')['Qtd_Negociada'].cumsum()
 swt_acoes['Var_quant'] = swt_acoes.groupby('Título')['Quantidade'].pct_change()
 
+
 #Aqui, para calcular o preço unitário. Automatizar o cálculo do preço médio ganha complexidade em situações em que há venda e recompra de ações, sem que elas tenham zero em algum momento (se tivessem zerado, o cálculo do preço médio recomeçaria a partir da nova compra). Por exemplo:
 #1) Possui 500 ações a 21.40
 #2) Vende-se 300 ações.
 #3) Compra-se 400 ações a 18.70.
 
+#O código abaixo garante que o preço médio seja obtido em quaisquer situações:
 ativos = swt_acoes.groupby('Título')
 vlt = []
 for name, group in ativos:
-	aux = 0 
+	v_aux = 0 
 	for index, row in group.iterrows():
 		if row['C/V'] == 'Compra':
-			aux += row['VLO']
+			v_aux += row['VLO']
 		else:
-			aux *= 1 + row['Var_quant']
-		vlt.append(aux)
+			v_aux *= 1 + row['Var_quant']
+		vlt.append(v_aux)
 
 swt_acoes['VTO'] = vlt
 
 #Preço Unitário:
 swt_acoes['Preço Unitário'] = swt_acoes['VTO']/swt_acoes['Quantidade']
 swt_acoes['Preço Unitário'].fillna(method = 'ffill', inplace = True)
+
 #Lucro:
 swt_acoes['Lucro'] = abs(swt_acoes['VLO']) - (swt_acoes['Preço Unitário']) * abs(swt_acoes['Qtd_Negociada'])
 
@@ -102,16 +108,20 @@ for index, row in swt_acoes.iterrows():
 
 swt_acoes['IRRF_calculado'] = irrf_calc
 
+
 #Tirar a coluna de lucro (porque ela foi feita somente para calcular o Resultado p/Ação)
 swt_acoes.drop(['Lucro'], axis = 1, inplace = True)
-#print(swt_acoes[['Taxas p/Nota', 'Valor Operação']])
-print("Essa é a DataFrame que contém as transações:\n", swt_acoes[['Nota', 'Qtd_Negociada', 'C/V', 'Preço', 'Taxa p/Ação', 'Quantidade','VLO', 'Preço Unitário', 'Resultado p/Ação', 'IRRF', 'IRRF_calculado']])
+
+colunas_print = ['Nota', 'Qtd_Negociada', 'C/V', 'Preço', 'Taxa p/Ação', 'Quantidade','VLO', 'Preço Unitário', 'Resultado p/Ação', 'IRRF por Nota', 'IRRF_calculado']
+print("Essa é a DataFrame que contém as transações:\n", swt_acoes[colunas_print])
+
 
 #O IR é calculado de acordo com o lucro de todas as ações no mês. O primeiro passo então é calcular o 
 swt_acoes_month = swt_acoes.reset_index(level = 0, drop = False)
-swt_acoes_month = swt_acoes_month[swt_acoes_month['C/V'] == 'Venda'].resample('M')[['Valor Operação', 'Resultado p/Ação', 'IRRF']].sum()
-swt_acoes_month.columns = ['Valor Operação', 'Resultado Mensal', 'IRRF']
-swt_acoes_month['IRRF Acumulado'] = swt_acoes_month['IRRF'].cumsum()
+swt_acoes_month = swt_acoes_month[swt_acoes_month['C/V'] == 'Venda'].resample('M')[['Valor Operação', 'Resultado p/Ação', 'IRRF por Nota']].sum()
+swt_acoes_month.columns = ['Valor Operação', 'Resultado Mensal', 'IRRF por Nota']
+swt_acoes_month['IRRF Acumulado'] = swt_acoes_month['IRRF por Nota'].cumsum()
+
 
 #Cálculo do IR: 4 Situações:
 #1) Se houver prejuízo, não tem IR e acumula o prejuízo:
@@ -143,7 +153,6 @@ for index, row in swt_acoes_month.iterrows():
 swt_acoes_month['Prejuízo a Abater'] = prej
 swt_acoes_month['IR'] = ir
 
-#print(swt_acoes_month)
 
 
 #Abatendo IRRF's:
@@ -154,6 +163,7 @@ swt_acoes_month = pd.concat([swt_acoes_month, ir_positivo], axis = 1)
 swt_acoes_month.fillna(value = {'IRRF_diff': 0}, inplace = True)
 
 irrf_dff = []
+
 for index, row in swt_acoes_month.iterrows():
 	if (row['IRRF_diff'] == 0) & (row['IR'] > 0):
 		irrf_dff.append(row['IRRF Acumulado'])
@@ -166,16 +176,20 @@ swt_acoes_month['IR Liq'] = swt_acoes_month['IR'] - swt_acoes_month['IRRF Acumul
 swt_acoes_month['IR Liq'] = swt_acoes_month['IR Liq'].apply(lambda x: x if x > 0 else 0)
 
 swt_acoes_month['Resultado Mensal Líquido'] = swt_acoes_month['Resultado Mensal'] - swt_acoes_month['IR Liq']
-print(swt_acoes_month)
 
 
 
+#Exporta as DataFrames:
+#1) Registros:
+swt_acoes.to_csv('registros.csv',
+	sep = ';',
+	decimal = ',',
+	encoding = 'latin-1')
 
 
-
-
- 
-
-
-
+#2) Mensal - agregado:
+swt_acoes_month.to_csv('mensal.csv',
+	sep = ';',
+	decimal = ',',
+	encoding = 'latin-1')
 
