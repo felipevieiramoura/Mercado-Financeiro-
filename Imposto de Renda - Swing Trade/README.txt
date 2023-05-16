@@ -1,9 +1,7 @@
 O sistema de atualização de imposto de renda para operações em Swing Trade requer:
 
 
-1) uma planilha de registros, em .csv, em que cada linha é uma operação. É formada pelas seguintes colunas:
-
-
+1) uma planilha de registros, em .csv, em que cada linha é uma operação (em exemplo, no arquivo csv). É formada pelas seguintes colunas:
 
 
 Título: TICKER
@@ -11,8 +9,5 @@ Data: data da operação
 Nota: número da nota (ativos podem ser comercializados na mesma nota)
 C/V: natureza da operação, se compra ou venda
 Preço: preço negociado
-Emolumentos (taxa): valor dos emolumentos
-Liquidação (taxa): valor da taxa principal da nota,d e liquidação
-Operacional (taxa): valor da taxa operacional
-Impostos (taxa): imposto sobre a operação (sem contar o IRRF)
-IRRF: Imposto retido na fonte (será positivo em caso de venda, colocar o imposto total da nota)
+Taxas da NOTA: total de taxas da nota (emolumentos, operacional, liquidação)
+IRRF da NOTA: Imposto retido na fonte (será positivo em caso de venda, colocar o imposto total da nota)
